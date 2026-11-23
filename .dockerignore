@@ -1,0 +1,17 @@
+node_modules
+packages/*/node_modules
+.git
+.gitignore
+.github
+**/out
+packages/web/web-dist
+packages/web/node_modules
+packages/sqlite-plugin/dist
+packages/ui/dist
+database.sqlite
+.env.local
+*.log
+**/.DS_Store
+Dockerfile
+docker-compose.yml
+.dockerignore

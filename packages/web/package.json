@@ -1,0 +1,26 @@
+{
+  "name": "@geekgeekrun/web",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Docker deployable web control panel for GeekGeekRun",
+  "type": "module",
+  "scripts": {
+    "build": "node ./build.mjs",
+    "start": "node ./server/index.mjs"
+  },
+  "dependencies": {
+    "@geekgeekrun/dingtalk-plugin": "workspace:*",
+    "@geekgeekrun/geek-auto-start-chat-with-boss": "workspace:*",
+    "@geekgeekrun/puppeteer-extra-plugin-laodeng": "workspace:*",
+    "@geekgeekrun/sqlite-plugin": "workspace:*",
+    "@geekgeekrun/utils": "workspace:*",
+    "puppeteer": "24.19.0",
+    "puppeteer-extra": "3.3.6",
+    "puppeteer-extra-plugin-anonymize-ua": "2.4.6",
+    "puppeteer-extra-plugin-stealth": "2.11.2",
+    "reflect-metadata": "^0.2.1"
+  },
+  "devDependencies": {
+    "esbuild": "^0.21.5"
+  }
+}

@@ -29,7 +29,7 @@ export async function main() {
   await ensureEditThisCookie()
   const { puppeteer } = await initPuppeteer()
   const browser = await puppeteer.launch({
-    headless: false,
+    headless: process.env.GEEKGEEKRUN_HEADLESS === '1',
     pipe: true,
     enableExtensions: [editThisCookieExtensionPath]
   })

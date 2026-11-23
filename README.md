@@ -147,6 +147,70 @@ BOSS不明原因已读不回？简历就是投不出去？
         ```
     1. 双击应用程序图标以启动程序；启动后，将引导你为初次使用进行一些配置
 
+- Docker（Web 网页版，无需桌面环境，适合服务器 / NAS 部署）
+    1. 安装 Docker 与 Docker Compose
+    1. 在项目根目录执行：
+        ```sh
+        docker compose up -d --build
+        ```
+        该命令同时启动 GeekGeekRun Web 和一个外部 Chromium（含网页 VNC）。GeekGeekRun 镜像本身不包含浏览器。
+    1. 浏览器打开 `http://<部署机器IP>:3210`，即可在网页中完成登录、配置与开聊的全部操作
+    1. 如需直接操作浏览器或扫码登录，打开 `https://<部署机器IP>:3001`（VNC 默认只绑定 `127.0.0.1`，可通过 SSH 隧道访问）
+    1. 数据（登录 Cookie、配置、SQLite 数据库）保存在 Docker 卷 `geekgeekrun-data` 中，容器重建不会丢失；如需备份：
+        ```sh
+        docker run --rm -v geekgeekrun-data:/data -v "$PWD":/backup alpine \
+          tar czf /backup/geekgeekrun-data.tgz -C /data .
+        ```
+    1. 常用命令：
+        ```sh
+        docker compose logs -f      # 查看日志
+        docker compose down         # 停止
+        docker compose up -d --build  # 更新代码后重新构建
+        ```
+
+    网页版与桌面版的功能对应关系：
+    - 所有页面（BOSS 登录、手动逛 BOSS）都以「截图 + 点击/输入转发」的方式在网页内操作
+    - 「编辑浏览器偏好」在网页版中不可用，浏览器由外部 CDP 端点提供
+    - 其余功能（自动开聊、已读不回自动复聊、公共筛选条件、简历编辑、大语言模型配置与测试、历史记录等）与桌面版一致
+    - 如部署在公网，请务必设置访问令牌（见下），避免登录凭证被他人使用
+
+    ### 浏览器：统一使用外部浏览器
+
+    Docker 镜像不安装 Chrome/Chromium，也不支持在容器内启动浏览器。`geekgeekrun-web` 始终通过 CDP 连接外部浏览器。默认 `docker-compose.yml` 会启动 `chromium`（有头，VNC 可看可操作），并用 `socat` 转发 DevTools 端口：
+
+    | 部署 | 配置 | 说明 |
+    | --- | --- | --- |
+    | 默认（有头，VNC） | `GEEKGEEKRUN_BROWSER_URL=http://chromium:9222` | 自动化标签页会出现在 VNC 里，也可以只在 VNC 中扫码登录 |
+    | browserless（无头） | `GEEKGEEKRUN_BROWSER_WS_ENDPOINT=ws://browserless:3000?token=xxx` | 适合 browserless 等纯 CDP 服务 |
+
+    默认 `docker compose up -d --build` 即为上表第一行：`geekgeekrun-web` + `chromium` + `chromium-cdp`。
+
+    - `chromium` 使用 `lscr.io/linuxserver/chromium`，`CHROME_CLI` 中已带 `--user-data-dir`（Chrome 136+ 远程调试必需）
+    - 该镜像的 DevTools 端口只监听容器内 `127.0.0.1`（[已知问题](https://github.com/linuxserver/docker-chromium/issues/71)），示例里用同网络命名空间的 `socat` 转发到 `0.0.0.0:9222`
+    - VNC 端口默认只绑定 `127.0.0.1`；需要局域网访问时设置 `CHROMIUM_BIND_IP=0.0.0.0`，并务必设置 `CHROMIUM_USER` / `CHROMIUM_PASSWORD` 或放到带认证的反向代理后面（该镜像内含可 sudo 的终端，切勿直接暴露公网）
+    - 如已有外部浏览器或 CDP 服务，可从 `docker-compose.yml` 删除 `chromium` / `chromium-cdp`，只保留 `geekgeekrun-web`，并设置 `GEEKGEEKRUN_BROWSER_URL` 或 `GEEKGEEKRUN_BROWSER_WS_ENDPOINT`
+    - 构建出的 `geekgeekrun-web` 镜像本身不含浏览器；`docker compose build --build-arg` 之类的旧构建参数已不再需要
+
+    使用 browserless（外部无头）时，另起一个浏览器服务并把 GeekGeekRun 指向它：
+
+    ```sh
+    docker run -d --name browserless -p 3000:3000 -e TOKEN=change-me ghcr.io/browserless/chromium
+    # GeekGeekRun 环境变量：
+    # GEEKGEEKRUN_BROWSER_WS_ENDPOINT=ws://browserless:3000?token=change-me
+    ```
+
+    > 注意：CDP 端点等同于完整的浏览器控制权限，请只在内网暴露，不要直接映射到公网；linuxserver 的 VNC 端口也建议加密码。
+
+    环境变量（在 `docker-compose.yml` 的 `environment` 中配置）：
+    | 变量 | 默认值 | 说明 |
+    | --- | --- | --- |
+    | `GEEKGEEKRUN_AUTH_TOKEN` | 空 | 设置后访问页面需要输入该令牌 |
+    | `PORT` / `HOST` | `3210` / `0.0.0.0` | 监听端口与地址 |
+    | `GEEKGEEKRUN_BROWSER_URL` | `http://chromium:9222` | 外部浏览器 HTTP CDP 地址 |
+    | `GEEKGEEKRUN_BROWSER_WS_ENDPOINT` | 空 | 外部浏览器 WebSocket CDP 地址（优先级高于 URL） |
+
+    > 注意：网页版运行在服务器上，BOSS 直聘看到的登录环境是服务器的网络出口；请自行评估使用风险，并遵守 [使用必读及免责声明](#使用必读及免责声明)。
+
 ## 关于软件不能正常启动、不能按预期运行的一些说明
 本程序一直都在不断地更新迭代中，包括新功能的增加以及Bug的修复。
 

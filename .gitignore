@@ -1,4 +1,7 @@
 node_modules
 database.sqlite
 .env.local
-
+packages/web/web-dist
+packages/ui/out
+packages/ui/dist
+packages/sqlite-plugin/dist

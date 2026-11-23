@@ -22,8 +22,16 @@ import { getLastUsedAndAvailableBrowser } from '../DOWNLOAD_DEPENDENCIES/utils/b
 import { configWithBrowserAssistant } from '../../features/config-with-browser-assistant'
 const { default: SqlitePlugin } = SqlitePluginModule
 
-process.on('SIGTERM', () => {
+process.on('SIGTERM', async () => {
   console.log('收到SIGTERM信号，正在退出')
+  try {
+    const { shutdownBrowserWindow } = await import(
+      '@geekgeekrun/geek-auto-start-chat-with-boss/index.mjs'
+    )
+    await shutdownBrowserWindow()
+  } catch {
+    // best effort
+  }
   process.exit(0)
 })
 
@@ -92,11 +100,15 @@ const runAutoChat = async () => {
     }
   })
   process.env.PUPPETEER_EXECUTABLE_PATH = puppeteerExecutable.executablePath
-  const { initPuppeteer, mainLoop, closeBrowserWindow, autoStartChatEventBus } = await import(
-    '@geekgeekrun/geek-auto-start-chat-with-boss/index.mjs'
-  )
-  process.on('disconnect', () => {
-    closeBrowserWindow()
+  const {
+    initPuppeteer,
+    mainLoop,
+    closeBrowserWindow,
+    shutdownBrowserWindow,
+    autoStartChatEventBus
+  } = await import('@geekgeekrun/geek-auto-start-chat-with-boss/index.mjs')
+  process.on('disconnect', async () => {
+    await shutdownBrowserWindow()
     app.exit()
   })
   await initPuppeteer()

@@ -1,0 +1,70 @@
+# 外部浏览器部署：
+#   chromium（有头，可通过网页 VNC 观看/操作）
+#     + chromium-cdp（socat 转发 Chrome DevTools 端口，因 Chrome 136+ 只监听 127.0.0.1）
+#     + geekgeekrun-web（镜像不含浏览器，通过 CDP 连接上面的浏览器）
+#
+# 用法：
+#   docker compose up -d --build
+#   GeekGeekRun: http://<host>:3210
+#   浏览器 VNC:  https://<host>:3001  (默认仅绑定 127.0.0.1；默认无密码)
+#
+# Chrome 136 起远程调试必须显式指定 user-data-dir；linuxserver 镜像中 DevTools
+# 端口固定绑定 127.0.0.1，因此用同一网络命名空间的 socat 转发到 0.0.0.0:9222。
+
+services:
+  chromium:
+    image: lscr.io/linuxserver/chromium:latest
+    container_name: ggr-chromium
+    environment:
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      TZ: ${TZ:-Asia/Shanghai}
+      # 可选：为 VNC 网页设置访问密码
+      CUSTOM_USER: ${CHROMIUM_USER:-}
+      PASSWORD: ${CHROMIUM_PASSWORD:-}
+      # Chrome 136+ 必须带 --user-data-dir 才会开启 DevTools 端口
+      CHROME_CLI: --user-data-dir=/config/ --remote-debugging-port=9223
+    volumes:
+      - chromium-config:/config
+    ports:
+      # 默认只允许本机访问 VNC；如需局域网访问，请设置 CHROMIUM_BIND_IP=0.0.0.0
+      # 并配置 CHROMIUM_USER / CHROMIUM_PASSWORD 或置于带认证的反向代理之后。
+      - "${CHROMIUM_BIND_IP:-127.0.0.1}:3000:3000"
+      - "${CHROMIUM_BIND_IP:-127.0.0.1}:3001:3001"
+    shm_size: 1gb
+    restart: unless-stopped
+
+  chromium-cdp:
+    image: docker.io/alpine/socat:latest
+    container_name: ggr-chromium-cdp
+    network_mode: service:chromium
+    command: tcp-listen:9222,fork,reuseaddr,bind=0.0.0.0 tcp:127.0.0.1:9223
+    depends_on:
+      - chromium
+    restart: unless-stopped
+
+  geekgeekrun-web:
+    build:
+      context: .
+    image: geekgeekrun-web:latest
+    container_name: geekgeekrun-web
+    depends_on:
+      - chromium
+      - chromium-cdp
+    ports:
+      - "3210:3210"
+    volumes:
+      # Login cookies, config files and the SQLite database live here.
+      - geekgeekrun-data:/data
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      # Optional. When set, the UI asks for this token before any API call.
+      GEEKGEEKRUN_AUTH_TOKEN: ${GEEKGEEKRUN_AUTH_TOKEN:-}
+      # Always use the external browser supplied by the chromium service.
+      GEEKGEEKRUN_BROWSER_URL: http://chromium:9222
+    init: true
+    restart: unless-stopped
+
+volumes:
+  geekgeekrun-data:
+  chromium-config:

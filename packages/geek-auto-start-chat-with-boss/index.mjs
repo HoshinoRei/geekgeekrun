@@ -10,6 +10,12 @@ import path from 'node:path';
 import JSON5 from 'json5'
 import { EventEmitter } from 'node:events'
 import { setDomainLocalStorage } from '@geekgeekrun/utils/puppeteer/local-storage.mjs'
+import { getPuppeteerLaunchArgs } from '@geekgeekrun/utils/puppeteer/launch-options.mjs'
+import {
+  connectOrLaunchBrowser,
+  disposeBrowser,
+  isRemoteBrowser
+} from '@geekgeekrun/utils/puppeteer/browser-connection.mjs'
 
 import { readConfigFile, writeStorageFile, ensureConfigFileExist, readStorageFile, ensureStorageFileExist } from './runtime-file-utils.mjs'
 import {
@@ -18,8 +24,8 @@ import {
   checkAnyCombineBossRecommendFilterHasCondition,
   formatStaticCombineFilters,
 } from './combineCalculator.mjs'
-import { default as jobFilterConditions } from './internal-config/job-filter-conditions-20241002.json'
-import { default as rawIndustryFilterExemption } from './internal-config/job-filter-industry-filter-exemption-20241002.json'
+import { default as jobFilterConditions } from './internal-config/job-filter-conditions-20241002.json' with { type: 'json' }
+import { default as rawIndustryFilterExemption } from './internal-config/job-filter-industry-filter-exemption-20241002.json' with { type: 'json' }
 import { ChatStartupFrom } from '@geekgeekrun/sqlite-plugin/dist/entity/ChatStartupLog'
 import {
   MarkAsNotSuitReason,
@@ -84,6 +90,8 @@ export const autoStartChatEventBus = new EventEmitter()
 /**
  * @type { import("puppeteer") }
  */
+let browserLaunchPromise = null
+let browserCloseRequested = false
 let puppeteer
 let StealthPlugin
 let LaodengPlugin
@@ -1699,16 +1707,30 @@ export async function mainLoop (hooks) {
     await initPuppeteer()
   }
   try {
-    browser = await puppeteer.launch({
-      headless: false,
+    browserLaunchPromise = connectOrLaunchBrowser(puppeteer, {
+      headless: process.env.GEEKGEEKRUN_HEADLESS === '1',
+      args: getPuppeteerLaunchArgs(),
       ignoreHTTPSErrors: true,
       defaultViewport: {
         width: 1440,
         height: 900 - 140,
       }
     })
+    try {
+      browser = await browserLaunchPromise
+    } finally {
+      browserLaunchPromise = null
+    }
+    if (browserCloseRequested) {
+      await disposeBrowser(browser)
+      return
+    }
     hooks.puppeteerLaunched?.call(browser)
-    page = (await browser.pages())[0]
+    page = isRemoteBrowser(browser) ? await browser.newPage() : (await browser.pages())[0]
+    if (browserCloseRequested) {
+      await disposeBrowser(browser, page)
+      return
+    }
     hooks.pageGotten?.call(page)
     //set cookies
     const bossCookies = readStorageFile('boss-cookies.json')
@@ -1741,17 +1763,36 @@ export async function mainLoop (hooks) {
   }
 }
 
+export async function shutdownBrowserWindow () {
+  browserCloseRequested = true
+  await closeBrowserWindow()
+}
+
 export async function closeBrowserWindow () {
-  browser?.close()
-  const browserProcess = browser?.process()
-  if (browserProcess) {
-    try {
-      process.kill(browserProcess.pid)
-    }
-    catch {}
-  }
+  let browserToClose = browser
+  let pageToClose = page
   browser = null
   page = null
+  if (!browserToClose && browserLaunchPromise) {
+    try {
+      browserToClose = await Promise.race([
+        browserLaunchPromise,
+        new Promise((resolve) => setTimeout(() => resolve(null), 3000))
+      ])
+    } catch {
+      // launch may fail while shutting down
+    }
+  }
+  if (!browserToClose) {
+    return
+  }
+  if (!pageToClose) {
+    for (let i = 0; i < 20 && !page; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 100))
+    }
+    pageToClose = page
+  }
+  await disposeBrowser(browserToClose, pageToClose)
 }
 
 async function storeStorage (page) {

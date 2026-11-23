@@ -4,6 +4,7 @@ import { Browser, Page } from 'puppeteer'
 import { getGptContent, sendLookForwardReplyEmotion, sendMessage } from './boss-operation'
 import { sleep, sleepWithRandomDelay } from '@geekgeekrun/utils/sleep.mjs'
 import { waitForPage } from '@geekgeekrun/utils/puppeteer/wait.mjs'
+import { disposeBrowser } from '@geekgeekrun/utils/puppeteer/browser-connection.mjs'
 import { app, dialog } from 'electron'
 import { initDb } from '@geekgeekrun/sqlite-plugin'
 import {
@@ -43,10 +44,6 @@ import { getLastUsedAndAvailableBrowser } from '../DOWNLOAD_DEPENDENCIES/utils/b
 import { configWithBrowserAssistant } from '../../features/config-with-browser-assistant'
 import { DEFAULT_CONSTANT_OPEN_CONTENT_SEGS } from '../../../common/constant'
 
-process.on('SIGTERM', () => {
-  console.log('收到SIGTERM信号，正在退出')
-  process.exit(0)
-})
 
 const throttleIntervalMinutes =
   readConfigFile('boss.json').autoReminder?.throttleIntervalMinutes ?? 10
@@ -290,22 +287,26 @@ async function checkJobIsClosed() {
 }
 
 let browser: null | Browser = null
+let bootstrapPromise: null | Promise<Browser> = null
+let pagePromise: null | Promise<Page> = null
 const mainLoop = async () => {
   if (browser) {
     try {
-      const cp = browser.process()
-      cp?.kill('SIGKILL')
+      await disposeBrowser(browser, pageMapByName.boss)
     } catch {
       //
     } finally {
       browser = null
+      pageMapByName.boss = null
     }
   }
   let bossCookies = readStorageFile('boss-cookies.json')
   let cookieCheckResult = checkCookieListFormat(bossCookies)
   while (!cookieCheckResult) {
     try {
-      browser && (await browser.close())
+      await disposeBrowser(browser, pageMapByName.boss)
+      browser = null
+      pageMapByName.boss = null
     } catch (err) {
       console.log(`close browser failed`, err)
     }
@@ -358,8 +359,26 @@ const mainLoop = async () => {
     '附件简历还没准备好',
     '设置合适的期望薪资范围'
   ].map((it) => new RegExp(it))
-  browser = await bootstrap()
-  await Promise.all([launchBoss(browser)])
+  bootstrapPromise = bootstrap()
+  try {
+    browser = await bootstrapPromise
+  } finally {
+    bootstrapPromise = null
+  }
+  if (isShuttingDown) {
+    await disposeBrowser(browser)
+    return
+  }
+  pagePromise = launchBoss(browser)
+  if (isShuttingDown) {
+    for (let i = 0; i < 20 && !pageMapByName.boss; i += 1) {
+      await sleep(100)
+    }
+    await disposeBrowser(browser, pageMapByName.boss)
+    return
+  }
+  await Promise.all([pagePromise])
+  pagePromise = null
 
   await sleep(1000)
   pageMapByName.boss!.bringToFront()
@@ -370,7 +389,9 @@ const mainLoop = async () => {
   if (currentPageUrl.startsWith('https://www.zhipin.com/web/user/')) {
     writeStorageFile('boss-cookies.json', [])
     try {
-      browser && (await browser.close())
+      await disposeBrowser(browser, pageMapByName.boss)
+      browser = null
+      pageMapByName.boss = null
     } catch (err) {
       console.log(`close browser failed`, err)
     }
@@ -827,9 +848,7 @@ process.once('unhandledRejection', (error) => {
   process.exit(1)
 })
 
-process.once('disconnect', () => {
-  process.exit(0)
-})
+
 
 async function storeStorage(page) {
   const [cookies, localStorage] = await Promise.all([
@@ -845,3 +864,55 @@ async function storeStorage(page) {
     writeStorageFile('boss-local-storage.json', localStorage)
   ])
 }
+
+let isShuttingDown = false
+
+async function gracefulShutdown () {
+  if (isShuttingDown) {
+    return
+  }
+  isShuttingDown = true
+  if (process.env.GEEKGEEKRUN_DEBUG_SHUTDOWN === '1') {
+    console.log('[shutdown] state', {
+      hasBrowser: !!browser,
+      hasBootstrap: !!bootstrapPromise,
+      hasPage: !!pageMapByName.boss
+    })
+  }
+  if (!browser && bootstrapPromise) {
+    try {
+      const pendingBrowser = await Promise.race([bootstrapPromise, sleep(3000).then(() => null)])
+      if (pendingBrowser) {
+        browser = pendingBrowser
+      }
+    } catch {
+      // launch may fail while shutting down
+    }
+  }
+  if (browser) {
+    // launchBoss assigns the page before navigating, so wait only for that
+    // assignment; awaiting navigation would block shutdown.
+    for (let i = 0; i < 20 && !pageMapByName.boss; i += 1) {
+      await sleep(100)
+    }
+  }
+  try {
+    await disposeBrowser(browser, pageMapByName.boss)
+    if (process.env.GEEKGEEKRUN_DEBUG_SHUTDOWN === '1') {
+      console.log('[shutdown] disposed', { hasBrowser: !!browser, hasPage: !!pageMapByName.boss })
+    }
+  } catch {
+    // best effort
+  }
+  process.exit(0)
+}
+
+// Registered after the module is fully initialized so the handlers can access
+// the active browser/page safely.
+process.on('SIGTERM', () => {
+  console.log('收到SIGTERM信号，正在退出')
+  void gracefulShutdown()
+})
+process.once('disconnect', () => {
+  void gracefulShutdown()
+})
