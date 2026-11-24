@@ -6,6 +6,12 @@ export interface ModalOptions {
   width?: string
   props?: Record<string, unknown>
   component: Component
+  /**
+   * The component is one of the desktop pages, which assume they own a whole
+   * window: their root fills the parent box (100% x 100%) and scrolls
+   * internally, so the dialog body has to be given a window-like height.
+   */
+  page?: boolean
 }
 
 export interface ModalHandle {
@@ -81,6 +87,7 @@ export const WebModalHost = {
             ElDialog,
             {
               key: entry.id,
+              class: entry.options.page ? 'ggr-web-page-modal' : '',
               modelValue: true,
               title: entry.options.title,
               width: entry.options.width ?? '720px',

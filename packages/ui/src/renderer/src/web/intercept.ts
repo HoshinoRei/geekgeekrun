@@ -1,8 +1,14 @@
-import { h, defineComponent, type Component } from 'vue'
+import { h, defineComponent } from 'vue'
 import { ElMessage } from 'element-plus'
 import { baseInvoke, baseSend, dispatchLocal, ipcRenderer, webApi } from './ipc'
 import { isRecord } from './guards'
-import { closeWebModal, MODAL_CLOSE_EVENT, modalStack, openWebModal } from './modal'
+import {
+  closeWebModal,
+  MODAL_CLOSE_EVENT,
+  modalStack,
+  openWebModal,
+  type ModalOptions
+} from './modal'
 import { openLoginModal } from './login-modal'
 import { PromptEditor } from './prompt-editor'
 import { SiteViewer } from './site-viewer'
@@ -13,11 +19,8 @@ import ReadNoReplyReminderLlmMockPage from '@renderer/page/ReadNoReplyReminderLl
 import FirstRunReadmePage from '@renderer/page/FirstRunReadme/index.vue'
 
 
-interface ModalFlowOptions {
+interface ModalFlowOptions extends ModalOptions {
   title: string
-  width?: string
-  component: Component
-  props?: Record<string, unknown>
 }
 
 /**
@@ -85,7 +88,7 @@ const interceptedInvokes: Record<string, (...args: unknown[]) => Promise<unknown
     const result = await baseInvoke('pre-enter-setting-ui')
     if (isRecord(result) && result.pendingAgreement) {
       await openModalFlow(
-        { title: '初次使用必读', width: '900px', component: FirstRunReadmePage },
+        { title: '初次使用必读', width: '960px', component: FirstRunReadmePage, page: true },
         ['first-launch-notice-approve']
       ).catch(() => undefined)
     }
@@ -93,20 +96,20 @@ const interceptedInvokes: Record<string, (...args: unknown[]) => Promise<unknown
   },
   'llm-config': () =>
     openModalFlow(
-      { title: '大语言模型设置', width: '640px', component: LlmConfigPage },
+      { title: '大语言模型设置', width: '640px', component: LlmConfigPage, page: true },
       ['save-llm-config']
     ),
   'resume-edit': () =>
-    openModalFlow(
-      { title: '简历编辑', width: '1000px', component: ResumeEditorPage },
-      ['save-resume-content']
-    ),
+    openModalFlow({ title: '简历编辑', width: '1000px', component: ResumeEditorPage, page: true }, [
+      'save-resume-content'
+    ]),
   'common-job-condition-config': async () => {
     await openModalFlow(
       {
         title: '公共职位筛选条件',
         width: '1024px',
-        component: CommonJobConditionConfigPage
+        component: CommonJobConditionConfigPage,
+        page: true
       },
       ['common-job-condition-config-done']
     )
@@ -193,7 +196,8 @@ const interceptedSends: Record<string, (...args: unknown[]) => Promise<unknown> 
     const modal = openWebModal({
       title: '已读不回自动复聊 大语言模型测试',
       width: '640px',
-      component: ReadNoReplyReminderLlmMockPage
+      component: ReadNoReplyReminderLlmMockPage,
+      page: true
     })
     queueMicrotask(() => window.history.replaceState(null, '', previousUrl))
     modal.onClosed(() => undefined)

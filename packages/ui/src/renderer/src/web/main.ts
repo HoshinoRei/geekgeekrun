@@ -6,6 +6,7 @@ import '@renderer/style/public.scss'
 import 'element-plus/dist/index.css'
 import 'virtual:uno.css'
 import 'animate.css'
+import './modal.scss'
 import './install-electron'
 import './intercept'
 import App from '../App.vue'
@@ -52,7 +53,7 @@ window.addEventListener('ggr:unauthorized', () => {
 const Root = {
   name: 'WebRoot',
   render() {
-    return h('div', null, [h(App), h(WebModalHost), h(WebLoginModalHost)])
+    return h('div', { class: 'web-root' }, [h(App), h(WebModalHost), h(WebLoginModalHost)])
   }
 }
 

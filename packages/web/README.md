@@ -17,6 +17,8 @@ Docker 部署 + 网页控制。
 - `ipc.ts`：`invoke`/`send`/`on` → HTTP + SSE
 - `intercept.ts`：把桌面版的「弹出窗口」类 IPC 调用改为页内对话框
 - `modal.ts` / `login-modal.ts` / `site-viewer.ts` / `prompt-editor.ts`：各类对话框
+- `modal.scss`：对话框样式；复用桌面版页面的对话框用 `ModalOptions.page` 标记，由
+  `.ggr-web-page-modal` 给对话框主体固定高度，页面按容器尺寸（`100%`）铺满并自行滚动
 
 桌面版 worker（`packages/ui/src/main/flow/**`）通过 esbuild 打桩后直接复用：
 `electron`、daemon 连接、浏览器助手、GTag 等在 `src/stubs/` 中替换，业务代码零分叉。

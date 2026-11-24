@@ -1,5 +1,5 @@
 <template>
-  <div class="h100vh flex flex-col">
+  <div class="h-full flex flex-col">
     <div
       ref="scrollElRef"
       :style="{

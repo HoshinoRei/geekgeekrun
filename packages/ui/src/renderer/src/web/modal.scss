@@ -1,0 +1,29 @@
+/**
+ * Styles for the web control panel; not used by the desktop app.
+ */
+
+/*
+ * The web app mounts the same App component as the desktop app, but under a
+ * wrapper element. Give it a definite height so pages that size themselves with
+ * `height: 100%` (which the desktop app gets from `#app`) still fill it.
+ */
+.web-root {
+  height: 100%;
+}
+
+/*
+ * Dialogs that reuse a desktop page (see `ModalOptions.page`): the page is laid
+ * out for a standalone window and scrolls internally, so the dialog body must
+ * be a window-like box instead of growing with the content, and the dialog must
+ * stay inside the viewport on narrow screens.
+ */
+.ggr-web-page-modal.el-dialog {
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 32px);
+}
+
+.ggr-web-page-modal .el-dialog__body {
+  height: 70vh;
+  padding: 0;
+  overflow: hidden;
+}

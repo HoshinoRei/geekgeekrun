@@ -172,8 +172,10 @@ const componentRootEl = ref<HTMLElement>()
 <style lang="scss" scoped>
 .first-run-readme {
   box-sizing: border-box;
-  width: 100vw;
-  height: 100vh;
+  /* Fills the parent box: the window root in the desktop app, the dialog body
+     in the web control panel. */
+  width: 100%;
+  height: 100%;
   overflow: auto;
   user-select: none;
   display: flex;
