@@ -159,7 +159,7 @@ BOSS不明原因已读不回？简历就是投不出去？
         docker compose up -d --build
         ```
         两种方式都会同时启动 GeekGeekRun Web 和一个外部 Chromium（含网页 VNC）。GeekGeekRun 镜像本身不包含浏览器。
-        预构建镜像发布在 `ghcr.io/hoshinorei/geekgeekrun-web`，标签有 `latest`、版本号（如 `0.17.4`，推送 `ui-v*` 标签时）和 `sha-<完整 commit>`。
+        预构建镜像发布在 `ghcr.io/hoshinorei/geekgeekrun`，标签有 `latest`、版本号（如 `0.17.4`，推送 `ui-v*` 标签时）和 `sha-<完整 commit>`。
     1. 浏览器打开 `http://<部署机器IP>:3210`，即可在网页中完成登录、配置与开聊的全部操作
     1. 如需直接操作浏览器或扫码登录，打开 `https://<部署机器IP>:3001`（VNC 默认只绑定 `127.0.0.1`，可通过 SSH 隧道访问）
     1. 数据（登录 Cookie、配置、SQLite 数据库）保存在 Docker 卷 `geekgeekrun-data` 中，容器重建不会丢失；如需备份：
@@ -196,7 +196,7 @@ BOSS不明原因已读不回？简历就是投不出去？
     - 该镜像的 DevTools 端口只监听容器内 `127.0.0.1`（[已知问题](https://github.com/linuxserver/docker-chromium/issues/71)），示例里用同网络命名空间的 `socat` 转发到 `0.0.0.0:9222`
     - VNC 端口默认只绑定 `127.0.0.1`；需要局域网访问时设置 `CHROMIUM_BIND_IP=0.0.0.0`，并务必设置 `CHROMIUM_USER` / `CHROMIUM_PASSWORD` 或放到带认证的反向代理后面（该镜像内含可 sudo 的终端，切勿直接暴露公网）
     - 如已有外部浏览器或 CDP 服务，可从 `docker-compose.yml` 删除 `chromium` / `chromium-cdp`，只保留 `geekgeekrun-web`，并设置 `GEEKGEEKRUN_BROWSER_URL` 或 `GEEKGEEKRUN_BROWSER_WS_ENDPOINT`
-    - 构建出的 `geekgeekrun-web` 镜像本身不含浏览器；`docker compose build --build-arg` 之类的旧构建参数已不再需要
+    - 构建出的 `geekgeekrun` 镜像本身不含浏览器；`docker compose build --build-arg` 之类的旧构建参数已不再需要
 
     使用 browserless（外部无头）时，另起一个浏览器服务并把 GeekGeekRun 指向它：
 
