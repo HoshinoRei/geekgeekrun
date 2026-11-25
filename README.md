@@ -151,9 +151,15 @@ BOSS不明原因已读不回？简历就是投不出去？
     1. 安装 Docker 与 Docker Compose
     1. 在项目根目录执行：
         ```sh
+        # 方式一：拉取 GitHub Actions 构建好的多架构镜像（linux/amd64 + linux/arm64，推荐）
+        docker compose pull geekgeekrun-web
+        docker compose up -d --no-build
+
+        # 方式二：本地从源码构建
         docker compose up -d --build
         ```
-        该命令同时启动 GeekGeekRun Web 和一个外部 Chromium（含网页 VNC）。GeekGeekRun 镜像本身不包含浏览器。
+        两种方式都会同时启动 GeekGeekRun Web 和一个外部 Chromium（含网页 VNC）。GeekGeekRun 镜像本身不包含浏览器。
+        预构建镜像发布在 `ghcr.io/hoshinorei/geekgeekrun-web`，标签有 `latest`、版本号（如 `0.17.4`，推送 `ui-v*` 标签时）和 `sha-<完整 commit>`。
     1. 浏览器打开 `http://<部署机器IP>:3210`，即可在网页中完成登录、配置与开聊的全部操作
     1. 如需直接操作浏览器或扫码登录，打开 `https://<部署机器IP>:3001`（VNC 默认只绑定 `127.0.0.1`，可通过 SSH 隧道访问）
     1. 数据（登录 Cookie、配置、SQLite 数据库）保存在 Docker 卷 `geekgeekrun-data` 中，容器重建不会丢失；如需备份：
@@ -165,7 +171,8 @@ BOSS不明原因已读不回？简历就是投不出去？
         ```sh
         docker compose logs -f      # 查看日志
         docker compose down         # 停止
-        docker compose up -d --build  # 更新代码后重新构建
+        docker compose pull geekgeekrun-web && docker compose up -d --no-build  # 更新到最新预构建镜像
+        docker compose up -d --build  # 本地重新构建（改了源码时）
         ```
 
     网页版与桌面版的功能对应关系：

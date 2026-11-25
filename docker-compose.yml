@@ -46,7 +46,9 @@ services:
   geekgeekrun-web:
     build:
       context: .
-    image: geekgeekrun-web:latest
+    # Prebuilt multi-arch image (linux/amd64 + linux/arm64) from GitHub Actions:
+    #   docker compose pull geekgeekrun-web && docker compose up -d --no-build
+    image: ghcr.io/hoshinorei/geekgeekrun-web:latest
     container_name: geekgeekrun-web
     depends_on:
       - chromium

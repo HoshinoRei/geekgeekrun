@@ -1,0 +1,162 @@
+name: Docker image
+
+on:
+  push:
+    branches:
+      - master
+    tags:
+      - 'ui-v*'
+  pull_request:
+    paths:
+      - '.github/workflows/docker.yml'
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'docker-compose.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # GHCR requires a lowercase image name; github.repository_owner is HoshinoRei.
+  IMAGE: ghcr.io/hoshinorei/geekgeekrun
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7
+
+      # arm64 is emulated via QEMU so NAS and Apple Silicon hosts get a native image.
+      - name: Set up QEMU
+        if: github.event_name != 'pull_request'
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Derive image tags and labels
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=match,pattern=ui-v(.*),group=1
+            type=sha,format=long
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: ${{ github.event_name == 'pull_request' && 'linux/amd64' || 'linux/amd64,linux/arm64' }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # A green build only proves the Dockerfile ran; the image must also boot.
+  # Pulls the just-published amd64 image and probes the web server.
+  smoke:
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run the published image and probe /api/env
+        env:
+          GEEKGEEKRUN_BROWSER_URL: http://127.0.0.1:9222
+        run: |
+          set -euo pipefail
+          image="${IMAGE}:sha-${GITHUB_SHA}"
+          docker pull "$image"
+          docker run -d --name geekgeekrun-web -p 3210:3210 \
+            -e GEEKGEEKRUN_BROWSER_URL "$image"
+
+          ok=""
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3210/api/env > /tmp/env.json; then
+              ok=1
+              break
+            fi
+            sleep 2
+          done
+          docker logs geekgeekrun-web || true
+          docker rm -f geekgeekrun-web > /dev/null || true
+
+          if [ -z "$ok" ]; then
+            echo "::error::/api/env never answered on the published image"
+            exit 1
+          fi
+          jq -e '.remoteBrowserConfigured == true' /tmp/env.json > /dev/null || {
+            echo "::error::the container did not pick up GEEKGEEKRUN_BROWSER_URL"
+            cat /tmp/env.json
+            exit 1
+          }
+          jq . /tmp/env.json
+
+      - name: Set up QEMU for the arm64 smoke test
+        uses: docker/setup-qemu-action@v4
+
+      # The arm64 image is assembled under emulation. A prebuild that resolved
+      # to x86 code would only break on a real NAS / Apple Silicon host, so boot
+      # the image and load the native sqlite module here.
+      - name: Boot the arm64 image
+        run: |
+          set -euo pipefail
+          image="${IMAGE}:sha-${GITHUB_SHA}"
+          docker pull --platform linux/arm64 "$image"
+
+          out=$(docker run --rm --platform linux/arm64 "$image" node -e "const Database=require('better-sqlite3');const db=new Database(':memory:');db.exec('create table t(a)');db.prepare('insert into t values (?)').run(1);console.log(JSON.stringify({row:db.prepare('select a from t').get(),arch:process.arch}))")
+          echo "$out"
+          echo "$out" | jq -e '.arch == "arm64" and .row.a == 1' > /dev/null || {
+            echo "::error::the arm64 image cannot run its native sqlite module"
+            exit 1
+          }
+
+          docker run -d --name geekgeekrun-web-arm64 --platform linux/arm64 \
+            -p 3210:3210 -e GEEKGEEKRUN_BROWSER_URL=http://127.0.0.1:9222 "$image"
+
+          ok=""
+          for _ in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:3210/api/env > /tmp/env-arm64.json; then
+              ok=1
+              break
+            fi
+            sleep 3
+          done
+          docker logs geekgeekrun-web-arm64 || true
+          docker rm -f geekgeekrun-web-arm64 > /dev/null || true
+
+          if [ -z "$ok" ]; then
+            echo "::error::/api/env never answered on the arm64 image"
+            exit 1
+          fi
+          jq . /tmp/env-arm64.json
